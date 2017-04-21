@@ -65,6 +65,7 @@
 
 // URDF
 #include <urdf/model.h>
+#include <urdf_model/pose.h>
 
 
 
@@ -101,7 +102,8 @@ protected:
                            const ros::NodeHandle& joint_limit_nh,
                            const urdf::Model *const urdf_model,
                            int *const joint_type, double *const lower_limit,
-                           double *const upper_limit, double *const effort_limit);
+                           double *const upper_limit, double *const effort_limit,
+                           urdf::Vector3 *const joint_axis);
 
   unsigned int n_dof_;
 
@@ -119,6 +121,7 @@ protected:
 
   std::vector<std::string> joint_names_;
   std::vector<int> joint_types_;
+  std::vector<urdf::Vector3> joint_axes_;
   std::vector<double> joint_lower_limits_;
   std::vector<double> joint_upper_limits_;
   std::vector<double> joint_effort_limits_;

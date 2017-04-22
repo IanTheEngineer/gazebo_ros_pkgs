@@ -255,46 +255,48 @@ void DefaultRobotHWSim::readSim(ros::Time time, ros::Duration period)
     // Gazebo has an interesting API...
     gazebo::physics::JointWrench wrench;
     wrench = sim_joints_[j]->GetForceTorque(0); 
+    /*ROS_WARN("%d Force %.4f %.4f %.4f, Torque %.4f %.4f %.4f", j, wrench.body2Force.x,
+                                                               wrench.body2Force.y, wrench.body2Force.z,
+                                                               wrench.body2Torque.x, wrench.body2Torque.y,
+                                                               wrench.body2Torque.z);
+    ROS_ERROR("%d Force %.4f %.4f %.4f, Torque %.4f %.4f %.4f", j, wrench.body1Force.x,
+                                                               wrench.body1Force.y, wrench.body1Force.z,
+                                                               wrench.body1Torque.x, wrench.body1Torque.y,
+                                                               wrench.body1Torque.z);*/
     if (joint_types_[j] == urdf::Joint::PRISMATIC)
     {
       joint_position_[j] = sim_joints_[j]->GetAngle(0).Radian();
-      if(joint_axes_[j].x == 1.0)
+      if(joint_axes_[j].z == 1.0)
       {
-        joint_effort_[j] = wrench.body2Force.x;
+        joint_effort_[j] = wrench.body2Force.z;
       }
       else if(joint_axes_[j].y == 1.0)
       {
         joint_effort_[j] = wrench.body2Force.y;
       }
-      else if(joint_axes_[j].z == 1.0)
+      else // joint_axes_[j].x, the default
       {
-        joint_effort_[j] = wrench.body2Force.z;
-      }
-      else
-      {
-        joint_effort_[j] = 0.0;
+        joint_effort_[j] = wrench.body2Force.x;
       }
     }
     else
     {
       joint_position_[j] += angles::shortest_angular_distance(joint_position_[j],
                             sim_joints_[j]->GetAngle(0).Radian());
-      if(joint_axes_[j].x == 1.0)
+      if(joint_axes_[j].z == 1.0)
       {
-        joint_effort_[j] = wrench.body2Torque.x;
+        joint_effort_[j] = wrench.body1Torque.z;
       }
       else if(joint_axes_[j].y == 1.0)
       {
-        joint_effort_[j] = wrench.body2Torque.y;
+        joint_effort_[j] = wrench.body1Torque.y;
       }
-      else if(joint_axes_[j].z == 1.0)
+      else // joint_axes_[j].x, the default
       {
-        joint_effort_[j] = wrench.body2Torque.z;
+        joint_effort_[j] = wrench.body1Torque.x;
       }
-      else
-      {
-        joint_effort_[j] = 0.0;
-      }
+      // Further investigate unit tests:
+      // https://bitbucket.org/osrf/gazebo/src/a4906e97bc1a1dee466d0cca9959f79db569bf0a/test/integration/joint_force_torque.cc?at=default&fileviewer=file-view-default
     }
     joint_velocity_[j] = sim_joints_[j]->GetVelocity(0);
   }
@@ -428,7 +430,6 @@ void DefaultRobotHWSim::registerJointLimits(const std::string& joint_name,
     {
       *joint_type = urdf_joint->type;
       *joint_axis = urdf_joint->axis;
-      ROS_WARN("Joing Axes for %s are %f %f %f", joint_name.c_str(), joint_axis->x, joint_axis->y, joint_axis->z);
       // Get limits from the URDF file.
       if (joint_limits_interface::getJointLimits(urdf_joint, limits))
         has_limits = true;

@@ -41,8 +41,8 @@
 
 #include <gazebo_ros_control/default_robot_hw_sim.h>
 #include <gazebo/physics/JointWrench.hh>
+#include <gazebo/math/Quaternion.hh>
 #include <urdf/model.h>
-
 
 namespace
 {
@@ -73,6 +73,8 @@ bool DefaultRobotHWSim::initSim(
   n_dof_ = transmissions.size();
   joint_names_.resize(n_dof_);
   joint_axes_.resize(n_dof_);
+  link_inertia_origin_.resize(n_dof_);
+  joint_origin_.resize(n_dof_);
   joint_types_.resize(n_dof_);
   joint_lower_limits_.resize(n_dof_);
   joint_upper_limits_.resize(n_dof_);
@@ -191,6 +193,10 @@ bool DefaultRobotHWSim::initSim(
     //ROS_DEBUG_STREAM_NAMED("default_robot_hw_sim", "Getting pointer to gazebo joint: "
     //  << joint_names_[j]);
     gazebo::physics::JointPtr joint = parent_model->GetJoint(joint_names_[j]);
+    /*gazebo::physics::LinkPtr parent_link = joint.GetParent();
+    gazebo::physics::InertialPtr parent_link_inertia = parent_link.GetInertial();
+    gazebo::physics::Pose parent_link_inertia_pose = parent_link_inertia.GetPose());*/
+    link_inertia_origin_[j] = joint->GetParent()->GetInertial()->GetPose();
     if (!joint)
     {
       ROS_ERROR_STREAM_NAMED("default_robot_hw", "This robot has a joint named \"" << joint_names_[j]
@@ -202,7 +208,7 @@ bool DefaultRobotHWSim::initSim(
     registerJointLimits(joint_names_[j], joint_handle, joint_control_methods_[j],
                         joint_limit_nh, urdf_model,
                         &joint_types_[j], &joint_lower_limits_[j], &joint_upper_limits_[j],
-                        &joint_effort_limits_[j], &joint_axes_[j]);
+                        &joint_effort_limits_[j], &joint_axes_[j], &joint_origin_[j]);
     if (joint_control_methods_[j] != EFFORT)
     {
       // Initialize the PID controller. If no PID gain values are found, use joint->SetAngle() or
@@ -254,7 +260,7 @@ void DefaultRobotHWSim::readSim(ros::Time time, ros::Duration period)
   {
     // Gazebo has an interesting API...
     gazebo::physics::JointWrench wrench;
-    wrench = sim_joints_[j]->GetForceTorque(0); 
+    wrench = sim_joints_[j]->GetForceTorque(0);
     /*ROS_WARN("%d Force %.4f %.4f %.4f, Torque %.4f %.4f %.4f", j, wrench.body2Force.x,
                                                                wrench.body2Force.y, wrench.body2Force.z,
                                                                wrench.body2Torque.x, wrench.body2Torque.y,
@@ -263,38 +269,22 @@ void DefaultRobotHWSim::readSim(ros::Time time, ros::Duration period)
                                                                wrench.body1Force.y, wrench.body1Force.z,
                                                                wrench.body1Torque.x, wrench.body1Torque.y,
                                                                wrench.body1Torque.z);*/
+
+    gazebo::math::Quaternion Rij = link_inertia_origin_[j].rot * joint_origin_[j].rot;
+    gazebo::math::Vector3    FRij = Rij * wrench.body1Force;
+
     if (joint_types_[j] == urdf::Joint::PRISMATIC)
     {
       joint_position_[j] = sim_joints_[j]->GetAngle(0).Radian();
-      if(joint_axes_[j].z == 1.0)
-      {
-        joint_effort_[j] = wrench.body2Force.z;
-      }
-      else if(joint_axes_[j].y == 1.0)
-      {
-        joint_effort_[j] = wrench.body2Force.y;
-      }
-      else // joint_axes_[j].x, the default
-      {
-        joint_effort_[j] = wrench.body2Force.x;
-      }
+      joint_effort_[j] = joint_axes_[j].Dot(FRij);
     }
     else
     {
       joint_position_[j] += angles::shortest_angular_distance(joint_position_[j],
                             sim_joints_[j]->GetAngle(0).Radian());
-      if(joint_axes_[j].z == 1.0)
-      {
-        joint_effort_[j] = wrench.body1Torque.z;
-      }
-      else if(joint_axes_[j].y == 1.0)
-      {
-        joint_effort_[j] = wrench.body1Torque.y;
-      }
-      else // joint_axes_[j].x, the default
-      {
-        joint_effort_[j] = wrench.body1Torque.x;
-      }
+      gazebo::math::Vector3 Pij = joint_origin_[j].pos - link_inertia_origin_[j].pos;
+      gazebo::math::Vector3 TRij = Rij * wrench.body1Torque;
+      joint_effort_[j] = joint_axes_[j].Dot(TRij + Pij.Cross(FRij));
       // Further investigate unit tests:
       // https://bitbucket.org/osrf/gazebo/src/a4906e97bc1a1dee466d0cca9959f79db569bf0a/test/integration/joint_force_torque.cc?at=default&fileviewer=file-view-default
     }
@@ -410,10 +400,11 @@ void DefaultRobotHWSim::registerJointLimits(const std::string& joint_name,
                          const urdf::Model *const urdf_model,
                          int *const joint_type, double *const lower_limit,
                          double *const upper_limit, double *const effort_limit,
-                         urdf::Vector3 *const joint_axis)
+                         gazebo::math::Vector3 *const joint_axis, gazebo::math::Pose *const joint_origin)
 {
   *joint_type = urdf::Joint::UNKNOWN;
-  *joint_axis = urdf::Vector3(1, 0, 0); // Default: http://wiki.ros.org/urdf/XML/joint#Elements
+  *joint_axis = gazebo::math::Vector3(1, 0, 0); // Default: http://wiki.ros.org/urdf/XML/joint#Elements
+  *joint_origin = gazebo::math::Pose(0, 0, 0, 0, 0, 0); // Default: http://wiki.ros.org/urdf/XML/joint#Elements
   *lower_limit = -std::numeric_limits<double>::max();
   *upper_limit = std::numeric_limits<double>::max();
   *effort_limit = std::numeric_limits<double>::max();
@@ -429,7 +420,17 @@ void DefaultRobotHWSim::registerJointLimits(const std::string& joint_name,
     if (urdf_joint != NULL)
     {
       *joint_type = urdf_joint->type;
-      *joint_axis = urdf_joint->axis;
+
+          joint_axis->Set(urdf_joint->axis.x, urdf_joint->axis.y, urdf_joint->axis.z);
+          double roll = 0.0;
+          double pitch = 0.0;
+          double yaw = 0.0;
+          urdf_joint->parent_to_joint_origin_transform.rotation.getRPY(roll, pitch, yaw);
+          joint_origin->Set(urdf_joint->parent_to_joint_origin_transform.position.x,
+                            urdf_joint->parent_to_joint_origin_transform.position.y,
+                            urdf_joint->parent_to_joint_origin_transform.position.z,
+                            roll, pitch, yaw);
+
       // Get limits from the URDF file.
       if (joint_limits_interface::getJointLimits(urdf_joint, limits))
         has_limits = true;

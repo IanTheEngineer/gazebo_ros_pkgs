@@ -53,8 +53,6 @@
 // Gazebo
 #include <gazebo/common/common.hh>
 #include <gazebo/physics/physics.hh>
-#include <gazebo/math/Vector3.hh>
-#include <gazebo/math/Pose.hh>
 #include <gazebo/gazebo.hh>
 
 // ROS
@@ -67,8 +65,6 @@
 
 // URDF
 #include <urdf/model.h>
-#include <urdf_model/pose.h>
-
 
 
 namespace gazebo_ros_control
@@ -104,8 +100,8 @@ protected:
                            const ros::NodeHandle& joint_limit_nh,
                            const urdf::Model *const urdf_model,
                            int *const joint_type, double *const lower_limit,
-                           double *const upper_limit, double *const effort_limit,
-                           gazebo::math::Vector3 *const joint_axis, gazebo::math::Pose *const joint_origin);
+                           double *const upper_limit, double *const effort_limit);
+  double calculateEffort(const gazebo::physics::JointPtr& jnt_ptr, int joint_type);
 
   unsigned int n_dof_;
 
@@ -123,9 +119,6 @@ protected:
 
   std::vector<std::string> joint_names_;
   std::vector<int> joint_types_;
-  std::vector<gazebo::math::Vector3> joint_axes_;
-  std::vector<gazebo::math::Pose> joint_origin_;
-  std::vector<gazebo::math::Pose> link_inertia_origin_;
   std::vector<double> joint_lower_limits_;
   std::vector<double> joint_upper_limits_;
   std::vector<double> joint_effort_limits_;
